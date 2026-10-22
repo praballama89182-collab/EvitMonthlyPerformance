@@ -382,25 +382,6 @@ def get_city_tier(city_val):
   return "Tier 3"
 
 
-T10_STATES = [
-    "Maharashtra",
-    "Delhi",
-    "Karnataka",
-    "Tamil Nadu",
-    "Telangana",
-    "West Bengal",
-    "Uttar Pradesh",
-    "Gujarat",
-]
-
-
-def get_region_for_state(state_val):
-  if pd.isna(state_val):
-    return "ROI"
-  st_clean = str(state_val).strip().title()
-  return "T-10" if st_clean in T10_STATES else "ROI"
-
-
 MONTH_ORDER_MAP = {
     "JANUARY": 1,
     "FEBRUARY": 2,
@@ -591,14 +572,6 @@ if uploaded_sales_files:
         ),
         None,
     )
-    cust_state_col = next(
-        (
-            c
-            for c in ["Customer State", "Supply State", "State", "Region"]
-            if c in raw_sales_concat.columns
-        ),
-        None,
-    )
     brand_col = next(
         (
             c
@@ -680,16 +653,10 @@ if uploaded_sales_files:
     master_sales_df["Customer City"] = (
         master_sales_df[cust_city_col] if cust_city_col else "Unknown"
     )
-    master_sales_df["Customer State"] = (
-        master_sales_df[cust_state_col] if cust_state_col else "Unknown"
-    )
 
-    # Derive Customer Tier and Region strictly from Customer State & City
-    master_sales_df["Customer Tier"] = master_sales_df["Customer City"].apply(
+    # Region derived via Vlookup/Mapping on Customer City (Tier 1, Tier 2, Tier 3)
+    master_sales_df["Region"] = master_sales_df["Customer City"].apply(
         get_city_tier
-    )
-    master_sales_df["Region"] = master_sales_df["Customer State"].apply(
-        get_region_for_state
     )
 
 if uploaded_files:
@@ -968,13 +935,14 @@ if uploaded_files:
             else master_sales_df[master_sales_df["Duration (Month)"] == sel_month]
         )
         sales_city_agg = (
-            filt_s_city.groupby(["Customer City", "Customer Tier", "Region"])
+            filt_s_city.groupby(["Customer City", "Region"])
             .agg(
                 Overall_sales=("_gross_amt", "sum"),
                 OV_QTY=("_qty", "sum"),
                 Orders=("_order_id", "nunique"),
             )
             .reset_index()
+            .rename(columns={"Region": "Tier"})
         )
 
         city_col_ad = next(
@@ -1045,8 +1013,7 @@ if uploaded_files:
 
         city_cols = [
             "Customer City",
-            "Customer Tier",
-            "Region",
+            "Tier",
             "Imp",
             "CPM",
             "Spends",
@@ -1138,7 +1105,7 @@ if uploaded_files:
         "Duration (Month)": filt_df["Duration (Month)"],
         "Duration (Week)": filt_df["Duration (Week)"],
         "Manufacturer": safe_get(filt_df, ["Manufacturer", "Manufacturer Name"]),
-        "Date": filt_df["Date"],
+        "date_ist": filt_df["Date"],
         "Campaign ID": safe_get(filt_df, ["Campaign ID", "CampaignId"]),
         "Campaign Name": safe_get(filt_df, ["Campaign Name", "Campaign"]),
         "City": safe_get(
@@ -1159,12 +1126,12 @@ if uploaded_files:
         "Pacing Type": safe_get(filt_df, ["Pacing Type"]),
         "CPM": safe_get(filt_df, ["CPM"]),
         "Total Budget": safe_get(filt_df, ["Total Budget", "Budget"]),
-        "Impressions": filt_df["_impressions"],
+        "Impression": filt_df["_impressions"],
         "Direct ATC": safe_get(filt_df, ["Direct ATC"]),
         "Indirect ATC": safe_get(filt_df, ["Indirect ATC"]),
-        "New Users": safe_get(filt_df, ["New Users"]),
-        "Direct Sales": safe_get(filt_df, ["Direct Sales"]),
-        "Indirect Sales": safe_get(filt_df, ["Indirect Sales"]),
+        "New User": safe_get(filt_df, ["New Users"]),
+        "Direct Sale": safe_get(filt_df, ["Direct Sales"]),
+        "Indirect Sale": safe_get(filt_df, ["Indirect Sales"]),
         "Direct Quantities Sold": safe_get(
             filt_df, ["Direct Quantities Sold", "Direct Orders"]
         ),
@@ -1205,15 +1172,13 @@ if uploaded_files:
               filt_s, ["STORE_ID", "city_id", "City ID", "Order Id"]
           ),
           "city_name": filt_s["Customer City"],
-          "Customer Tier": filt_s["Customer Tier"],
-          "Customer State": filt_s["Customer State"],
-          "Region": filt_s["Region"],
           "category": filt_s["_category"],
-          "Date": filt_s["Date"],
+          "date": filt_s["Date"],
           "Duration (Month)": filt_s["Duration (Month)"],
           "Duration (Week)": filt_s["Duration (Week)"],
           "qty_sold": filt_s["_qty"],
           "mrp": filt_s["_gross_amt"],
+          "Region": filt_s["Region"],
       })
     else:
       final_overall_export = pd.DataFrame(columns=[
@@ -1224,15 +1189,13 @@ if uploaded_files:
           "manufacturer_name",
           "city_id",
           "city_name",
-          "Customer Tier",
-          "Customer State",
-          "Region",
           "category",
-          "Date",
+          "date",
           "Duration (Month)",
           "Duration (Week)",
           "qty_sold",
           "mrp",
+          "Region",
       ])
 
     with tab5:
