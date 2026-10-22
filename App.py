@@ -1,6 +1,7 @@
 import os
 import io
 import datetime
+import re
 import pandas as pd
 import numpy as np
 import streamlit as st
@@ -100,15 +101,12 @@ st.markdown("""
 st.markdown("<h1 style='text-align: center;'>Quick-Commerce Master Dashboard & Summary</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center;'>Upload Ad Campaign and Sales reports to generate consolidated analytics and master dumps.</p>", unsafe_allow_html=True)
 
-CITY_REGION_MASTER = {
-    "Ahmedabad": "T-10", "Bengaluru": "T-10", "Chennai": "T-10", "Delhi": "T-10",
-    "Gurgaon": "T-10", "Hyderabad": "T-10", "Kolkata": "T-10", "Lucknow": "T-10",
-    "Mumbai": "T-10", "Pune": "T-10"
-}
+T10_STATES = ['Maharashtra', 'Delhi', 'Karnataka', 'Tamil Nadu', 'Telangana', 'West Bengal', 'Uttar Pradesh', 'Gujarat']
 
-def get_region_for_city(city_val):
-    if pd.isna(city_val): return "ROI"
-    return CITY_REGION_MASTER.get(str(city_val).strip().title(), "ROI")
+def get_region_for_state(state_val):
+    if pd.isna(state_val): return "ROI"
+    st_clean = str(state_val).strip().title()
+    return "T-10" if st_clean in T10_STATES else "ROI"
 
 def format_duration_month(dt):
     if pd.isna(dt): return np.nan
@@ -124,32 +122,10 @@ def format_duration_week(dt):
     end_dt = start_dt + datetime.timedelta(days=6)
     return f"Week {iso_wk:02d} ({start_dt.strftime('%b %d')} to {end_dt.strftime('%b %d')})"
 
-def style_and_export_pivot(pivot_df, sheet_name="Sheet1"):
-    buffer = io.BytesIO()
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = sheet_name[:31]
-    
-    top_header_fill = PatternFill(start_color="4A90C2", end_color="4A90C2", fill_type="solid")
-    top_header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-    data_font = Font(name="Calibri", size=10, color="000000")
-
-    for col_idx, col_name in enumerate(pivot_df.columns, start=1):
-        cell = ws.cell(row=1, column=col_idx, value=str(col_name))
-        cell.fill = top_header_fill
-        cell.font = top_header_font
-
-    for r_idx, (idx_val, row_data) in enumerate(pivot_df.iterrows(), start=2):
-        for c_idx, (col_name, val) in enumerate(zip(pivot_df.columns, row_data), start=1):
-            val_cell = ws.cell(row=r_idx, column=c_idx, value=val)
-            val_cell.font = data_font
-
-    for col in ws.columns:
-        max_len = max(len(str(cell.value or '')) for cell in col)
-        ws.column_dimensions[openpyxl.utils.get_column_letter(col[0].column)].width = max(max_len + 3, 10)
-    wb.save(buffer)
-    buffer.seek(0)
-    return buffer.getvalue()
+def extract_week_num(week_str):
+    if pd.isna(week_str): return 0
+    match = re.search(r'Week (\d+)', str(week_str))
+    return int(match.group(1)) if match else 0
 
 st.markdown("### 📤 Upload Ad Campaign Reports (Up to 5)")
 col1, col2, col3, col4, col5 = st.columns(5)
@@ -209,15 +185,18 @@ if uploaded_sales_files:
         prod_col = next((c for c in ['PRODUCT_NAME', 'Product Name', 'Item Name', 'product_name'] if c in raw_sales_concat.columns), None)
         date_col = next((c for c in ['ORDER_DATE', 'Order Date', 'date', 'Date'] if c in raw_sales_concat.columns), None)
         qty_col = next((c for c in ['UNITS_SOLD', 'Quantity', 'Qty', 'qty_sold'] if c in raw_sales_concat.columns), None)
-        mrp_col = next((c for c in ['GMV', 'BASE_MRP', 'MRP (Rs)', 'Selling Price (Rs)', 'mrp'] if c in raw_sales_concat.columns), None)
-        city_col = next((c for c in ['CITY', 'Supply City', 'city_name', 'City'] if c in raw_sales_concat.columns), None)
+        mrp_col = next((c for c in ['Selling Price (Rs)', 'MRP (Rs)', 'GMV', 'BASE_MRP', 'mrp'] if c in raw_sales_concat.columns), None)
+        cust_city_col = next((c for c in ['Customer City', 'CITY', 'Supply City', 'city_name', 'City'] if c in raw_sales_concat.columns), None)
+        cust_state_col = next((c for c in ['Customer State', 'Supply State', 'State', 'Region'] if c in raw_sales_concat.columns), None)
         brand_col = next((c for c in ['Brand Name', 'BRAND', 'Franchise', 'Brand'] if c in raw_sales_concat.columns), None)
         cat_col = next((c for c in ['Business Category', 'L1_CATEGORY', 'category', 'Category'] if c in raw_sales_concat.columns), None)
+        order_id_col = next((c for c in ['Order Id', 'Order ID', 'order_id'] if c in raw_sales_concat.columns), None)
         
         master_sales_df = raw_sales_concat.copy()
         master_sales_df['_product_name'] = master_sales_df[prod_col].astype(str) if prod_col else ""
         master_sales_df['_brand'] = master_sales_df[brand_col].astype(str) if brand_col else ""
         master_sales_df['_category'] = master_sales_df[cat_col].astype(str) if cat_col else ""
+        master_sales_df['_order_id'] = master_sales_df[order_id_col] if order_id_col else np.nan
         
         if date_col:
             master_sales_df['_sales_dt'] = pd.to_datetime(master_sales_df[date_col], errors='coerce')
@@ -231,8 +210,9 @@ if uploaded_sales_files:
             
         master_sales_df['_qty'] = pd.to_numeric(master_sales_df[qty_col].astype(str).str.replace(',', ''), errors='coerce').fillna(1.0) if qty_col else 1.0
         master_sales_df['_gross_amt'] = pd.to_numeric(master_sales_df[mrp_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0.0) if mrp_col else 0.0
-        master_sales_df['city_name'] = master_sales_df[city_col] if city_col else "Unknown"
-        master_sales_df['Region'] = master_sales_df['city_name'].apply(get_region_for_city)
+        master_sales_df['Customer City'] = master_sales_df[cust_city_col] if cust_city_col else "Unknown"
+        master_sales_df['Customer State'] = master_sales_df[cust_state_col] if cust_state_col else "Unknown"
+        master_sales_df['Region'] = master_sales_df['Customer State'].apply(get_region_for_state)
 
 if uploaded_files:
     consolidated_dfs, consolidated_raw_tabs = [], {}
@@ -276,8 +256,12 @@ if uploaded_files:
 
         final_df['_impressions'] = get_numeric(['Impressions'])
         final_df['_atc'] = get_numeric(['Direct ATC']) + get_numeric(['Indirect ATC'])
-        final_df['_orders'] = get_numeric(['Direct Quantities Sold', 'Direct Orders']) + get_numeric(['Indirect Quantities Sold', 'Indirect Orders'])
-        final_df['_sales'] = get_numeric(['Direct Sales', 'Claimables'])
+        final_df['_direct_qty'] = get_numeric(['Direct Quantities Sold', 'Direct Orders'])
+        final_df['_indirect_qty'] = get_numeric(['Indirect Quantities Sold', 'Indirect Orders'])
+        final_df['_ad_qty'] = final_df['_direct_qty'] + final_df['_indirect_qty']
+        final_df['_direct_sales'] = get_numeric(['Direct Sales', 'Claimables'])
+        final_df['_indirect_sales'] = get_numeric(['Indirect Sales'])
+        final_df['_sales'] = final_df['_direct_sales'] + final_df['_indirect_sales']
         final_df['_budget_consumed'] = get_numeric(['served_budget_consumed', 'Estimated Budget Consumed', 'Budget Consumed', 'Spend'])
 
         st.markdown("### 🔍 Global Month Filter")
@@ -316,36 +300,93 @@ if uploaded_files:
         
         with tab1:
             st.markdown("#### Day-Wise Performance Breakdown")
-            daily_pivot = filt_df.groupby('date_ist').agg(
-                Impressions=('_impressions', 'sum'),
+            ads_daily_agg = filt_df.groupby('date_ist').agg(
+                Imp=('_impressions', 'sum'),
                 Spends=('_budget_consumed', 'sum'),
-                Ad_Sales=('_sales', 'sum')
+                Ad_sales=('_sales', 'sum'),
+                AD_QTY=('_ad_qty', 'sum')
             ).reset_index()
-            daily_pivot['Ad ROAS'] = (daily_pivot['Ad_Sales'] / daily_pivot['Spends']).round(2).fillna(0.0)
-            st.dataframe(daily_pivot, use_container_width=True)
+
+            if not master_sales_df.empty:
+                filt_s_daily = master_sales_df if sel_month == "All Months" else master_sales_df[master_sales_df['Duration (Month)'] == sel_month]
+                sales_daily_agg = filt_s_daily.groupby('date').agg(
+                    Overall_sales=('_gross_amt', 'sum'),
+                    OV_QTY=('_qty', 'sum'),
+                    Orders=('_order_id', 'nunique')
+                ).reset_index().rename(columns={'date': 'date_ist'})
+                daily_overview = pd.merge(ads_daily_agg, sales_daily_agg, on='date_ist', how='outer').fillna(0)
+            else:
+                daily_overview = ads_daily_agg.copy()
+                daily_overview['Overall_sales'] = 0.0
+                daily_overview['OV_QTY'] = 0.0
+                daily_overview['Orders'] = 0
+
+            daily_overview['CPM'] = (daily_overview['Spends'] / daily_overview['Imp'] * 1000).round(2).fillna(0.0)
+            daily_overview['Ad ROAS'] = (daily_overview['Ad_sales'] / daily_overview['Spends']).round(2).fillna(0.0)
+            daily_overview['TROAS'] = (daily_overview['Overall_sales'] / daily_overview['Spends']).round(2).fillna(0.0)
+            daily_overview['TACOS'] = ((daily_overview['Spends'] / daily_overview['Overall_sales']) * 100).round(2).fillna(0.0).astype(str) + "%"
+            daily_overview['AOV'] = (daily_overview['Overall_sales'] / daily_overview['Orders']).round(2).fillna(0.0)
+
+            daily_cols = ['date_ist', 'Imp', 'CPM', 'Spends', 'Ad_sales', 'Overall_sales', 'TACOS', 'Ad ROAS', 'TROAS', 'OV_QTY', 'AD_QTY', 'AOV']
+            daily_overview = daily_overview[[c for c in daily_cols if c in daily_overview.columns]].sort_values(by='date_ist')
+            st.dataframe(daily_overview, use_container_width=True)
 
         with tab2:
-            st.markdown("#### City & Region Performance Breakdown")
-            city_col = next((c for c in ['City', 'Supply City', 'city_name'] if c in filt_df.columns), None)
-            if city_col:
-                city_pivot = filt_df.groupby(city_col).agg(
-                    Impressions=('_impressions', 'sum'),
-                    Spends=('_budget_consumed', 'sum'),
-                    Ad_Sales=('_sales', 'sum')
+            st.markdown("#### Customer City Performance Breakdown (From Overall Raw)")
+            if not master_sales_df.empty:
+                filt_s_city = master_sales_df if sel_month == "All Months" else master_sales_df[master_sales_df['Duration (Month)'] == sel_month]
+                
+                sales_city_agg = filt_s_city.groupby(['Customer City', 'Region']).agg(
+                    Overall_sales=('_gross_amt', 'sum'),
+                    OV_QTY=('_qty', 'sum'),
+                    Orders=('_order_id', 'nunique')
                 ).reset_index()
-                city_pivot['Region'] = city_pivot[city_col].apply(get_region_for_city)
-                city_pivot['Ad ROAS'] = (city_pivot['Ad_Sales'] / city_pivot['Spends']).round(2).fillna(0.0)
-                st.dataframe(city_pivot, use_container_width=True)
+
+                city_col_ad = next((c for c in ['Customer City', 'City', 'Supply City', 'city_name'] if c in filt_df.columns), None)
+                if city_col_ad:
+                    ads_city_agg = filt_df.groupby(city_col_ad).agg(
+                        Imp=('_impressions', 'sum'),
+                        Spends=('_budget_consumed', 'sum'),
+                        Ad_sales=('_sales', 'sum'),
+                        AD_QTY=('_ad_qty', 'sum')
+                    ).reset_index().rename(columns={city_col_ad: 'Customer City'})
+                    city_overview = pd.merge(sales_city_agg, ads_city_agg, on='Customer City', how='left').fillna(0)
+                else:
+                    city_overview = sales_city_agg.copy()
+                    city_overview['Imp'] = 0.0
+                    city_overview['Spends'] = 0.0
+                    city_overview['Ad_sales'] = 0.0
+                    city_overview['AD_QTY'] = 0.0
+
+                city_overview['CPM'] = (city_overview['Spends'] / city_overview['Imp'] * 1000).round(2).fillna(0.0)
+                city_overview['Ad ROAS'] = (city_overview['Ad_sales'] / city_overview['Spends']).round(2).fillna(0.0)
+                city_overview['TROAS'] = (city_overview['Overall_sales'] / city_overview['Spends']).round(2).fillna(0.0)
+                city_overview['TACOS'] = ((city_overview['Spends'] / city_overview['Overall_sales']) * 100).round(2).fillna(0.0).astype(str) + "%"
+                city_overview['AOV'] = (city_overview['Overall_sales'] / city_overview['Orders']).round(2).fillna(0.0)
+
+                city_cols = ['Customer City', 'Region', 'Imp', 'CPM', 'Spends', 'Ad_sales', 'Overall_sales', 'TACOS', 'Ad ROAS', 'TROAS', 'OV_QTY', 'AD_QTY', 'AOV']
+                city_overview = city_overview[[c for c in city_cols if c in city_overview.columns]].sort_values(by='Overall_sales', ascending=False)
+                st.dataframe(city_overview, use_container_width=True)
             else:
-                st.info("City column not found in uploaded ad report.")
+                st.info("Sales report required to render Customer City overview.")
 
         with tab3:
             st.markdown("#### Weekly Performance Breakdown")
-            week_pivot = filt_df.groupby('Duration (Week)').agg(
+            week_avail_months = sorted([m for m in final_df['Duration (Month)'].dropna().unique() if str(m) != 'nan'])
+            wk_sel_month = st.selectbox("Filter Month (Weekly Overview):", ["All Months"] + week_avail_months, key="wk_month_filter")
+            
+            wk_filt_df = final_df if wk_sel_month == "All Months" else final_df[final_df['Duration (Month)'] == wk_sel_month]
+            
+            week_pivot = wk_filt_df.groupby('Duration (Week)').agg(
                 Impressions=('_impressions', 'sum'),
                 Spends=('_budget_consumed', 'sum'),
-                Ad_Sales=('_sales', 'sum')
+                Ad_Sales=('_sales', 'sum'),
+                AD_QTY=('_ad_qty', 'sum')
             ).reset_index()
+            
+            week_pivot['_wk_num'] = week_pivot['Duration (Week)'].apply(extract_week_num)
+            week_pivot = week_pivot.sort_values(by='_wk_num').drop(columns=['_wk_num'])
+            
             week_pivot['Ad ROAS'] = (week_pivot['Ad_Sales'] / week_pivot['Spends']).round(2).fillna(0.0)
             st.dataframe(week_pivot, use_container_width=True)
 
@@ -354,17 +395,35 @@ if uploaded_files:
                 if p in df_src.columns: return df_src[p]
             return np.nan
 
+        def derive_ad_type_and_targeting(df_in):
+            ad_type_series = safe_get(df_in, ['Ad type', 'Ad Type', 'Campaign Type'])
+            if type(ad_type_series) == type(np.nan) or ad_type_series is np.nan:
+                ad_type_series = pd.Series("", index=df_in.index)
+            
+            targeting_list = []
+            for val in ad_type_series:
+                v_str = str(val).lower()
+                if 'product booster' in v_str or 'pb' in v_str:
+                    targeting_list.append('Keyword')
+                elif 'recommendation' in v_str or 'rec' in v_str:
+                    targeting_list.append('Recommendation')
+                else:
+                    targeting_list.append('Keyword')
+            return ad_type_series, pd.Series(targeting_list, index=df_in.index)
+
+        ad_types_col, targeting_types_col = derive_ad_type_and_targeting(filt_df)
+
         # Prepare ADs Dump DataFrame
-        final_ads_export = pd.DataFrame({
+        ads_export_df = pd.DataFrame({
             'Duration (Month)': filt_df['Duration (Month)'],
             'Duration (Week)': filt_df['Duration (Week)'],
             'Manufacturer': safe_get(filt_df, ['Manufacturer', 'Manufacturer Name']),
             'date_ist': filt_df['date_ist'],
             'Campaign ID': safe_get(filt_df, ['Campaign ID', 'CampaignId']),
             'Campaign Name': safe_get(filt_df, ['Campaign Name', 'Campaign']),
-            'City': safe_get(filt_df, ['City', 'Supply City', 'city_name']),
-            'Ad type': safe_get(filt_df, ['Ad type', 'Ad Type', 'Campaign Type']),
-            'Targeting Type': safe_get(filt_df, ['Targeting Type', 'Targeting']),
+            'City': safe_get(filt_df, ['City', 'Customer City', 'Supply City', 'city_name']),
+            'Ad type': ad_types_col,
+            'Targeting Type': targeting_types_col,
             'Franchise': safe_get(filt_df, ['Franchise', 'Brand', 'BRAND']),
             'Category': safe_get(filt_df, ['Category', 'category', 'L1_CATEGORY']),
             'Sub Category': safe_get(filt_df, ['Sub Category', 'Subcategory', 'L2_CATEGORY']),
@@ -390,7 +449,7 @@ if uploaded_files:
 
         with tab4:
             st.markdown("#### Preview: ADs Dump Output Table")
-            st.dataframe(final_ads_export.head(100), use_container_width=True)
+            st.dataframe(ads_export_df.head(100), use_container_width=True)
 
         # Prepare Overall Dump DataFrame
         if not master_sales_df.empty:
@@ -402,7 +461,7 @@ if uploaded_files:
                 'manufacturer_id': safe_get(filt_s, ['manufacturer_id', 'Manufacturer ID']),
                 'manufacturer_name': safe_get(filt_s, ['manufacturer_name', 'Manufacturer']),
                 'city_id': safe_get(filt_s, ['STORE_ID', 'city_id', 'City ID', 'Order Id']),
-                'city_name': filt_s['city_name'],
+                'city_name': filt_s['Customer City'],
                 'category': filt_s['_category'],
                 'date': filt_s['date'],
                 'Duration (Month)': filt_s['Duration (Month)'],
@@ -421,7 +480,7 @@ if uploaded_files:
         st.divider()
         buf = io.BytesIO()
         with pd.ExcelWriter(buf, engine='openpyxl') as writer:
-            final_ads_export.to_excel(writer, sheet_name='ADs Dump', index=False)
+            ads_export_df.to_excel(writer, sheet_name='ADs Dump', index=False)
             final_overall_export.to_excel(writer, sheet_name='Overall Dump', index=False)
             for r_name, d_list in consolidated_raw_tabs.items():
                 pd.concat(d_list, ignore_index=True, sort=False).to_excel(writer, sheet_name=r_name[:31], index=False)
