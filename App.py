@@ -408,13 +408,24 @@ if uploaded_files:
             tacos = 0.0
 
         st.markdown("### 📈 Overall Campaign Performance Metrics")
-        kpi1, kpi2, kpi3, kpi4, kpi5, kpi6 = st.columns(6)
-        with kpi1: st.metric("Ad Sales", f"₹{int(round(tot_ad_sales)):,}")
-        with kpi2: st.metric("Total Sales", f"₹{int(round(tot_overall_sales)):,}")
-        with kpi3: st.metric("Ad Spends", f"₹{int(round(tot_spends)):,}")
-        with kpi4: st.metric("Ad ROAS", f"{ad_roas:.2f}x")
-        with kpi5: st.metric("TROAS", f"{troas:.2f}x")
-        with kpi6: st.metric("TACOS", f"{tacos:.2f}%")
+        
+        # Row 1: Volume & Revenue Financials
+        row1_c1, row1_c2, row1_c3 = st.columns(3)
+        with row1_c1:
+            st.metric("Ad Sales", f"₹{int(round(tot_ad_sales)):,}")
+        with row1_c2:
+            st.metric("Total Sales", f"₹{int(round(tot_overall_sales)):,}")
+        with row1_c3:
+            st.metric("Ad Spends", f"₹{int(round(tot_spends)):,}")
+
+        # Row 2: Efficiency & Margin Ratios
+        row2_c1, row2_c2, row2_c3 = st.columns(3)
+        with row2_c1:
+            st.metric("Ad ROAS", f"{ad_roas:.2f}x")
+        with row2_c2:
+            st.metric("TROAS", f"{troas:.2f}x")
+        with row2_c3:
+            st.metric("TACOS", f"{tacos:.2f}%")
 
         st.divider()
         tab1, tab2, tab3 = st.tabs(["📄 Raw Preview", "📊 Monthly Summary MoM", "💾 Master Dumps & Reports"])
