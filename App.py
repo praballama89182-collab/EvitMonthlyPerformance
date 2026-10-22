@@ -393,11 +393,28 @@ if uploaded_files:
         sel_month = st.selectbox("Select Month:", ["All Months"] + get_calendar_months_asc(final_df))
         filt_df = final_df if sel_month == "All Months" else final_df[final_df['Month'] == sel_month]
 
-        tot_sales, tot_spends = round(filt_df['_sales'].sum(), 2), round(filt_df['_budget_consumed'].sum(), 2)
-        m1, m2, m3 = st.columns(3)
-        with m1: st.metric("Ad Sales", f"₹{int(round(tot_sales)):,}")
-        with m2: st.metric("Spends", f"₹{int(round(tot_spends)):,}")
-        with m3: st.metric("Ad ROAS", f"{round(tot_sales/tot_spends, 2) if tot_spends>0 else 0.0:.2f}x")
+        tot_ad_sales = round(filt_df['_sales'].sum(), 2)
+        tot_spends = round(filt_df['_budget_consumed'].sum(), 2)
+        ad_roas = round(tot_ad_sales / tot_spends, 2) if tot_spends > 0 else 0.0
+
+        if not master_sales_df.empty:
+            filt_sales_df = master_sales_df if sel_month == "All Months" else master_sales_df[master_sales_df['Month'] == sel_month]
+            tot_overall_sales = round(filt_sales_df['_gross_amt'].sum(), 2)
+            troas = round(tot_overall_sales / tot_spends, 2) if tot_spends > 0 else 0.0
+            tacos = round((tot_spends / tot_overall_sales) * 100, 2) if tot_overall_sales > 0 else 0.0
+        else:
+            tot_overall_sales = 0.0
+            troas = 0.0
+            tacos = 0.0
+
+        st.markdown("### 📈 Overall Campaign Performance Metrics")
+        kpi1, kpi2, kpi3, kpi4, kpi5, kpi6 = st.columns(6)
+        with kpi1: st.metric("Ad Sales", f"₹{int(round(tot_ad_sales)):,}")
+        with kpi2: st.metric("Total Sales", f"₹{int(round(tot_overall_sales)):,}")
+        with kpi3: st.metric("Ad Spends", f"₹{int(round(tot_spends)):,}")
+        with kpi4: st.metric("Ad ROAS", f"{ad_roas:.2f}x")
+        with kpi5: st.metric("TROAS", f"{troas:.2f}x")
+        with kpi6: st.metric("TACOS", f"{tacos:.2f}%")
 
         st.divider()
         tab1, tab2, tab3 = st.tabs(["📄 Raw Preview", "📊 Monthly Summary MoM", "💾 Master Dumps & Reports"])
