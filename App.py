@@ -572,6 +572,14 @@ if uploaded_sales_files:
         ),
         None,
     )
+    cust_state_col = next(
+        (
+            c
+            for c in ["Customer State", "Supply State", "State", "Region"]
+            if c in raw_sales_concat.columns
+        ),
+        None,
+    )
     brand_col = next(
         (
             c
@@ -652,6 +660,9 @@ if uploaded_sales_files:
     )
     master_sales_df["Customer City"] = (
         master_sales_df[cust_city_col] if cust_city_col else "Unknown"
+    )
+    master_sales_df["Customer State"] = (
+        master_sales_df[cust_state_col] if cust_state_col else "Unknown"
     )
 
     # Region derived via Vlookup/Mapping on Customer City (Tier 1, Tier 2, Tier 3)
@@ -1179,6 +1190,7 @@ if uploaded_files:
           "qty_sold": filt_s["_qty"],
           "mrp": filt_s["_gross_amt"],
           "Region": filt_s["Region"],
+          "Customer State": filt_s["Customer State"],
       })
     else:
       final_overall_export = pd.DataFrame(columns=[
@@ -1196,6 +1208,7 @@ if uploaded_files:
           "qty_sold",
           "mrp",
           "Region",
+          "Customer State",
       ])
 
     with tab5:
