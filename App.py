@@ -94,6 +94,18 @@ st.markdown("""
         background: #E5F1F9 !important;
         color: #285B7A !important;
         font-weight: 700 !important;
+        text-align: center !important;
+    }
+    [data-testid="stDataFrame"] td {
+        text-align: center !important;
+        justify-content: center !important;
+    }
+    table {
+        margin: auto;
+        text-align: center !important;
+    }
+    th, td {
+        text-align: center !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -108,12 +120,22 @@ def get_region_for_state(state_val):
     st_clean = str(state_val).strip().title()
     return "T-10" if st_clean in T10_STATES else "ROI"
 
-def format_duration_month(dt):
-    if pd.isna(dt): return np.nan
-    month_num = dt.month
-    short_mon = dt.strftime('%b')
-    yr = dt.strftime('%y')
-    return f"{month_num}. {short_mon}'{yr}"
+MONTH_ORDER_MAP = {
+    "JANUARY": 1, "FEBRUARY": 2, "MARCH": 3, "APRIL": 4,
+    "MAY": 5, "JUNE": 6, "JULY": 7, "AUGUST": 8,
+    "SEPTEMBER": 9, "OCTOBER": 10, "NOVEMBER": 11, "DECEMBER": 12,
+    "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
+    "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12
+}
+
+def get_chronological_month_mapping(month_names_series):
+    unique_months = [str(m).strip() for m in month_names_series.dropna().unique() if str(m) != 'nan']
+    # Sort chronologically by calendar month number
+    sorted_months = sorted(unique_months, key=lambda x: MONTH_ORDER_MAP.get(x[:3].upper(), 99))
+    mapping = {}
+    for idx, m in enumerate(sorted_months, start=1):
+        mapping[m] = f"{idx}.{m}"
+    return mapping
 
 def format_duration_week(dt):
     if pd.isna(dt): return np.nan
@@ -200,13 +222,13 @@ if uploaded_sales_files:
         
         if date_col:
             master_sales_df['_sales_dt'] = pd.to_datetime(master_sales_df[date_col], errors='coerce')
-            master_sales_df['Duration (Month)'] = master_sales_df['_sales_dt'].apply(format_duration_month)
+            master_sales_df['_raw_month'] = master_sales_df['_sales_dt'].dt.strftime('%B')
             master_sales_df['Duration (Week)'] = master_sales_df['_sales_dt'].apply(format_duration_week)
-            master_sales_df['date'] = master_sales_df['_sales_dt'].dt.strftime('%Y/%m/%d')
+            master_sales_df['Date'] = master_sales_df['_sales_dt'].dt.strftime('%Y/%m/%d')
         else:
-            master_sales_df['Duration (Month)'] = np.nan
+            master_sales_df['_raw_month'] = "Unknown"
             master_sales_df['Duration (Week)'] = np.nan
-            master_sales_df['date'] = np.nan
+            master_sales_df['Date'] = np.nan
             
         master_sales_df['_qty'] = pd.to_numeric(master_sales_df[qty_col].astype(str).str.replace(',', ''), errors='coerce').fillna(1.0) if qty_col else 1.0
         master_sales_df['_gross_amt'] = pd.to_numeric(master_sales_df[mrp_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0.0) if mrp_col else 0.0
@@ -250,8 +272,8 @@ if uploaded_files:
 
         date_col_ad = next((c for c in ['date_ist', 'Date', 'date'] if c in final_df.columns), None)
         final_df['_date_dt'] = pd.to_datetime(final_df[date_col_ad], errors='coerce') if date_col_ad else pd.NaT
-        final_df['date_ist'] = final_df['_date_dt'].dt.strftime('%Y/%m/%d')
-        final_df['Duration (Month)'] = final_df['_date_dt'].apply(format_duration_month)
+        final_df['Date'] = final_df['_date_dt'].dt.strftime('%Y/%m/%d')
+        final_df['_raw_month'] = final_df['_date_dt'].dt.strftime('%B')
         final_df['Duration (Week)'] = final_df['_date_dt'].apply(format_duration_week)
 
         final_df['_impressions'] = get_numeric(['Impressions'])
@@ -263,6 +285,14 @@ if uploaded_files:
         final_df['_indirect_sales'] = get_numeric(['Indirect Sales'])
         final_df['_sales'] = final_df['_direct_sales'] + final_df['_indirect_sales']
         final_df['_budget_consumed'] = get_numeric(['served_budget_consumed', 'Estimated Budget Consumed', 'Budget Consumed', 'Spend'])
+
+        # Compute chronological month mapping for both datasets combined
+        all_raw_months = pd.concat([final_df['_raw_month'], master_sales_df.get('_raw_month', pd.Series())])
+        chrono_map = get_chronological_month_mapping(all_raw_months)
+
+        final_df['Duration (Month)'] = final_df['_raw_month'].map(chrono_map)
+        if not master_sales_df.empty:
+            master_sales_df['Duration (Month)'] = master_sales_df['_raw_month'].map(chrono_map)
 
         st.markdown("### 🔍 Global Month Filter")
         avail_months = sorted([m for m in final_df['Duration (Month)'].dropna().unique() if str(m) != 'nan'])
@@ -300,7 +330,13 @@ if uploaded_files:
         
         with tab1:
             st.markdown("#### Day-Wise Performance Breakdown")
-            ads_daily_agg = filt_df.groupby('date_ist').agg(
+            # Daily Overview Month Filter
+            daily_avail_months = sorted([m for m in final_df['Duration (Month)'].dropna().unique() if str(m) != 'nan'])
+            daily_sel_month = st.selectbox("Filter Month (Daily Overview):", ["All Months"] + daily_avail_months, key="daily_month_filter")
+            
+            daily_filt_ad = final_df if daily_sel_month == "All Months" else final_df[final_df['Duration (Month)'] == daily_sel_month]
+            
+            ads_daily_agg = daily_filt_ad.groupby('Date').agg(
                 Imp=('_impressions', 'sum'),
                 Spends=('_budget_consumed', 'sum'),
                 Ad_sales=('_sales', 'sum'),
@@ -308,13 +344,13 @@ if uploaded_files:
             ).reset_index()
 
             if not master_sales_df.empty:
-                filt_s_daily = master_sales_df if sel_month == "All Months" else master_sales_df[master_sales_df['Duration (Month)'] == sel_month]
-                sales_daily_agg = filt_s_daily.groupby('date').agg(
+                daily_filt_sales = master_sales_df if daily_sel_month == "All Months" else master_sales_df[master_sales_df['Duration (Month)'] == daily_sel_month]
+                sales_daily_agg = daily_filt_sales.groupby('Date').agg(
                     Overall_sales=('_gross_amt', 'sum'),
                     OV_QTY=('_qty', 'sum'),
                     Orders=('_order_id', 'nunique')
-                ).reset_index().rename(columns={'date': 'date_ist'})
-                daily_overview = pd.merge(ads_daily_agg, sales_daily_agg, on='date_ist', how='outer').fillna(0)
+                ).reset_index()
+                daily_overview = pd.merge(ads_daily_agg, sales_daily_agg, on='Date', how='outer').fillna(0)
             else:
                 daily_overview = ads_daily_agg.copy()
                 daily_overview['Overall_sales'] = 0.0
@@ -327,8 +363,8 @@ if uploaded_files:
             daily_overview['TACOS'] = ((daily_overview['Spends'] / daily_overview['Overall_sales']) * 100).round(2).fillna(0.0).astype(str) + "%"
             daily_overview['AOV'] = (daily_overview['Overall_sales'] / daily_overview['Orders']).round(2).fillna(0.0)
 
-            daily_cols = ['date_ist', 'Imp', 'CPM', 'Spends', 'Ad_sales', 'Overall_sales', 'TACOS', 'Ad ROAS', 'TROAS', 'OV_QTY', 'AD_QTY', 'AOV']
-            daily_overview = daily_overview[[c for c in daily_cols if c in daily_overview.columns]].sort_values(by='date_ist')
+            daily_cols = ['Date', 'Imp', 'CPM', 'Spends', 'Ad_sales', 'Overall_sales', 'TACOS', 'Ad ROAS', 'TROAS', 'OV_QTY', 'AD_QTY', 'AOV']
+            daily_overview = daily_overview[[c for c in daily_cols if c in daily_overview.columns]].sort_values(by='Date')
             st.dataframe(daily_overview, use_container_width=True)
 
         with tab2:
@@ -418,7 +454,7 @@ if uploaded_files:
             'Duration (Month)': filt_df['Duration (Month)'],
             'Duration (Week)': filt_df['Duration (Week)'],
             'Manufacturer': safe_get(filt_df, ['Manufacturer', 'Manufacturer Name']),
-            'date_ist': filt_df['date_ist'],
+            'Date': filt_df['Date'],
             'Campaign ID': safe_get(filt_df, ['Campaign ID', 'CampaignId']),
             'Campaign Name': safe_get(filt_df, ['Campaign Name', 'Campaign']),
             'City': safe_get(filt_df, ['City', 'Customer City', 'Supply City', 'city_name']),
@@ -463,7 +499,7 @@ if uploaded_files:
                 'city_id': safe_get(filt_s, ['STORE_ID', 'city_id', 'City ID', 'Order Id']),
                 'city_name': filt_s['Customer City'],
                 'category': filt_s['_category'],
-                'date': filt_s['date'],
+                'Date': filt_s['Date'],
                 'Duration (Month)': filt_s['Duration (Month)'],
                 'Duration (Week)': filt_s['Duration (Week)'],
                 'qty_sold': filt_s['_qty'],
@@ -471,7 +507,7 @@ if uploaded_files:
                 'Region': filt_s['Region']
             })
         else:
-            final_overall_export = pd.DataFrame(columns=['item_id', 'item_name', 'Franchise', 'manufacturer_id', 'manufacturer_name', 'city_id', 'city_name', 'category', 'date', 'Duration (Month)', 'Duration (Week)', 'qty_sold', 'mrp', 'Region'])
+            final_overall_export = pd.DataFrame(columns=['item_id', 'item_name', 'Franchise', 'manufacturer_id', 'manufacturer_name', 'city_id', 'city_name', 'category', 'Date', 'Duration (Month)', 'Duration (Week)', 'qty_sold', 'mrp', 'Region'])
 
         with tab5:
             st.markdown("#### Preview: Overall Dump Output Table")
