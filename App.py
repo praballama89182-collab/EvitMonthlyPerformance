@@ -96,16 +96,12 @@ st.markdown("""
         font-weight: 700 !important;
         text-align: center !important;
     }
-    [data-testid="stDataFrame"] td {
+    [data-testid="stDataFrame"] td,
+    [data-testid="stDataFrame"] div,
+    [data-testid="stDataFrame"] span {
         text-align: center !important;
         justify-content: center !important;
-    }
-    table {
-        margin: auto;
-        text-align: center !important;
-    }
-    th, td {
-        text-align: center !important;
+        align-items: center !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -130,7 +126,6 @@ MONTH_ORDER_MAP = {
 
 def get_chronological_month_mapping(month_names_series):
     unique_months = [str(m).strip() for m in month_names_series.dropna().unique() if str(m) != 'nan']
-    # Sort chronologically by calendar month number
     sorted_months = sorted(unique_months, key=lambda x: MONTH_ORDER_MAP.get(x[:3].upper(), 99))
     mapping = {}
     for idx, m in enumerate(sorted_months, start=1):
@@ -209,7 +204,8 @@ if uploaded_sales_files:
         qty_col = next((c for c in ['UNITS_SOLD', 'Quantity', 'Qty', 'qty_sold'] if c in raw_sales_concat.columns), None)
         mrp_col = next((c for c in ['Selling Price (Rs)', 'MRP (Rs)', 'GMV', 'BASE_MRP', 'mrp'] if c in raw_sales_concat.columns), None)
         cust_city_col = next((c for c in ['Customer City', 'CITY', 'Supply City', 'city_name', 'City'] if c in raw_sales_concat.columns), None)
-        cust_state_col = next((c for c in ['Customer State', 'Supply State', 'State', 'Region'] if c in raw_sales_concat.columns), None)
+        # Explicitly search for Customer State first without falling back to pre-existing 'Region' column
+        cust_state_col = next((c for c in ['Customer State', 'Supply State', 'State'] if c in raw_sales_concat.columns), None)
         brand_col = next((c for c in ['Brand Name', 'BRAND', 'Franchise', 'Brand'] if c in raw_sales_concat.columns), None)
         cat_col = next((c for c in ['Business Category', 'L1_CATEGORY', 'category', 'Category'] if c in raw_sales_concat.columns), None)
         order_id_col = next((c for c in ['Order Id', 'Order ID', 'order_id'] if c in raw_sales_concat.columns), None)
@@ -286,7 +282,6 @@ if uploaded_files:
         final_df['_sales'] = final_df['_direct_sales'] + final_df['_indirect_sales']
         final_df['_budget_consumed'] = get_numeric(['served_budget_consumed', 'Estimated Budget Consumed', 'Budget Consumed', 'Spend'])
 
-        # Compute chronological month mapping for both datasets combined
         all_raw_months = pd.concat([final_df['_raw_month'], master_sales_df.get('_raw_month', pd.Series())])
         chrono_map = get_chronological_month_mapping(all_raw_months)
 
@@ -330,7 +325,6 @@ if uploaded_files:
         
         with tab1:
             st.markdown("#### Day-Wise Performance Breakdown")
-            # Daily Overview Month Filter
             daily_avail_months = sorted([m for m in final_df['Duration (Month)'].dropna().unique() if str(m) != 'nan'])
             daily_sel_month = st.selectbox("Filter Month (Daily Overview):", ["All Months"] + daily_avail_months, key="daily_month_filter")
             
@@ -365,7 +359,7 @@ if uploaded_files:
 
             daily_cols = ['Date', 'Imp', 'CPM', 'Spends', 'Ad_sales', 'Overall_sales', 'TACOS', 'Ad ROAS', 'TROAS', 'OV_QTY', 'AD_QTY', 'AOV']
             daily_overview = daily_overview[[c for c in daily_cols if c in daily_overview.columns]].sort_values(by='Date')
-            st.dataframe(daily_overview, use_container_width=True)
+            st.dataframe(daily_overview.style.set_properties(**{'text-align': 'center'}), use_container_width=True)
 
         with tab2:
             st.markdown("#### Customer City Performance Breakdown (From Overall Raw)")
@@ -402,7 +396,7 @@ if uploaded_files:
 
                 city_cols = ['Customer City', 'Region', 'Imp', 'CPM', 'Spends', 'Ad_sales', 'Overall_sales', 'TACOS', 'Ad ROAS', 'TROAS', 'OV_QTY', 'AD_QTY', 'AOV']
                 city_overview = city_overview[[c for c in city_cols if c in city_overview.columns]].sort_values(by='Overall_sales', ascending=False)
-                st.dataframe(city_overview, use_container_width=True)
+                st.dataframe(city_overview.style.set_properties(**{'text-align': 'center'}), use_container_width=True)
             else:
                 st.info("Sales report required to render Customer City overview.")
 
@@ -424,7 +418,7 @@ if uploaded_files:
             week_pivot = week_pivot.sort_values(by='_wk_num').drop(columns=['_wk_num'])
             
             week_pivot['Ad ROAS'] = (week_pivot['Ad_Sales'] / week_pivot['Spends']).round(2).fillna(0.0)
-            st.dataframe(week_pivot, use_container_width=True)
+            st.dataframe(week_pivot.style.set_properties(**{'text-align': 'center'}), use_container_width=True)
 
         def safe_get(df_src, possible):
             for p in possible:
@@ -485,7 +479,7 @@ if uploaded_files:
 
         with tab4:
             st.markdown("#### Preview: ADs Dump Output Table")
-            st.dataframe(ads_export_df.head(100), use_container_width=True)
+            st.dataframe(ads_export_df.head(100).style.set_properties(**{'text-align': 'center'}), use_container_width=True)
 
         # Prepare Overall Dump DataFrame
         if not master_sales_df.empty:
@@ -511,7 +505,7 @@ if uploaded_files:
 
         with tab5:
             st.markdown("#### Preview: Overall Dump Output Table")
-            st.dataframe(final_overall_export.head(100), use_container_width=True)
+            st.dataframe(final_overall_export.head(100).style.set_properties(**{'text-align': 'center'}), use_container_width=True)
 
         st.divider()
         buf = io.BytesIO()
