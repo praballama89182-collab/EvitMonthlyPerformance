@@ -1,6 +1,7 @@
 import datetime
 import io
 import re
+import matplotlib.pyplot as plt
 import numpy as np
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -196,7 +197,7 @@ TIER_2_CITIES = {
     "Madurai",
     "Thane",
     "Gandhingar",
-    "Gandhinagar",
+    "Gandhingar",
     "Malegaon",
     "Thrissur",
     "Mangaluru",
@@ -379,7 +380,7 @@ def get_city_tier(city_val):
     return "Tier 2"
   elif clean_city in TIER_3_CITIES:
     return "Tier 3"
-  return "Tier 3"  # Fallback for future unlisted cities
+  return "Tier 3"
 
 
 T10_STATES = [
@@ -684,7 +685,7 @@ if uploaded_sales_files:
         master_sales_df[cust_state_col] if cust_state_col else "Unknown"
     )
 
-    # Derive Customer Tier and Region from PDF city list
+    # Derive Customer Tier and Region strictly from Customer State & City
     master_sales_df["Customer Tier"] = master_sales_df["Customer City"].apply(
         get_city_tier
     )
@@ -1063,6 +1064,82 @@ if uploaded_files:
             [c for c in city_cols if c in city_overview.columns]
         ].sort_values(by="Overall_sales", ascending=False)
         st.dataframe(city_overview, use_container_width=True)
+
+        st.markdown("### 📊 Region-Wise & Performance Distribution Charts")
+        chart_col1, chart_col2 = st.columns(2)
+
+        # Professional Blue/Lavender Color Palette
+        blue_palette = [
+            "#4A90C2",
+            "#6AA6CF",
+            "#285B7A",
+            "#93C5FD",
+            "#A78BFA",
+            "#3B82F6",
+        ]
+
+        with chart_col1:
+          st.markdown(
+              "<h4 style='text-align: center;'>Region-Wise Overall Sales"
+              " Distribution</h4>",
+              unsafe_allow_html=True,
+          )
+          region_sales = (
+              city_overview.groupby("Region")["Overall_sales"]
+              .sum()
+              .reset_index()
+          )
+          if not region_sales.empty and region_sales["Overall_sales"].sum() > 0:
+            fig, ax = plt.subplots(figsize=(6, 4))
+            ax.pie(
+                region_sales["Overall_sales"],
+                labels=region_sales["Region"],
+                autopct="%1.1f%%",
+                startangle=140,
+                colors=blue_palette[: len(region_sales)],
+                wedgeprops={
+                    "edgecolor": "white",
+                    "linewidth": 2,
+                    "antialiased": True,
+                },
+                textprops={"color": "#29465B", "weight": "bold"},
+            )
+            ax.axis("equal")
+            st.pyplot(fig)
+          else:
+            st.info("No sales data available for region distribution chart.")
+
+        with chart_col2:
+          st.markdown(
+              "<h4 style='text-align: center;'>Region-Wise Ad Sales vs Spends"
+              " Distribution</h4>",
+              unsafe_allow_html=True,
+          )
+          region_ads = (
+              city_overview.groupby("Region")[["Ad_sales", "Spends"]]
+              .sum()
+              .reset_index()
+          )
+          if not region_ads.empty and region_ads["Ad_sales"].sum() > 0:
+            fig, ax = plt.subplots(figsize=(6, 4))
+            ax.pie(
+                region_ads["Ad_sales"],
+                labels=region_ads["Region"],
+                autopct="%1.1f%%",
+                startangle=140,
+                colors=blue_palette[2:],
+                wedgeprops={
+                    "edgecolor": "white",
+                    "linewidth": 2,
+                    "antialiased": True,
+                },
+                textprops={"color": "#29465B", "weight": "bold"},
+            )
+            ax.axis("equal")
+            st.pyplot(fig)
+          else:
+            st.info("No ad sales data available for distribution chart.")
+
       else:
         st.info("Sales report required to render Customer City overview.")
 
